@@ -77,13 +77,14 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
     pci_set_master(pdev); /* Enable bus mastering bit in device for DMA */
 
-    create_region(pdev, &regions[0], 1000 * 1024, 'a', 1000 * 1024);
-    create_region(pdev, &regions[1], 1000 * 1024, 'b', 1000 * 1024);
+    // Allocate and fill 1MB regions
+    create_region(pdev, &regions[0], 1 << 20, 'a', 1 << 20);
+    create_region(pdev, &regions[1], 1 << 20, 'b', 1 << 20);
     
-    dma_transfer(regions[0].bus_addr, regions[1].bus_addr, 1000 * 1024);
+    dma_transfer(regions[0].bus_addr, regions[1].bus_addr, 1 << 20);
 
     while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
-    printk("Transfer Status: %d\n", memcmp(regions[0].cpu_addr, regions[1].cpu_addr, 1000 * 1024));
+    printk("Transfer Status: %d\n", memcmp(regions[0].cpu_addr, regions[1].cpu_addr, 1 << 20));
 
     return 0;
 }
