@@ -65,8 +65,13 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
     pci_set_master(pdev); /* Enable bus mastering bit in device for DMA */
     vaddr = dma_alloc_coherent(&pdev->dev, COHERENT_REGION_SIZE, &dma_addr, flags);
 
-    iowrite32(0x5, vaddr); /* Write data to vaddr to transfer */
-    dma_transfer(dev_region, dma_addr, dma_addr + 4, 2); /* Device performs DMA transfer */
+    memset(vaddr, 'a', 1000); /* Fill memory with 1mb data, to be transfered */
+
+    dma_transfer(dev_region, dma_addr, dma_addr + 1020, 1000);
+
+    while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
+
+    printk("Transfer memcmp Status: %d\n", memcmp(vaddr, vaddr + 1020, 1000));
 
     return 0;
 }
