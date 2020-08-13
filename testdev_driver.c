@@ -34,7 +34,7 @@ static void *vaddr;
 static void __iomem *dev_region;
 static int flags = GFP_KERNEL; /* get free pages on behalf of kernel */
 
-void dma_transfer(void __iomem *region, dma_addr_t src_addr, dma_addr_t dst_addr, dma_addr_t size)
+void dma_transfer(dma_addr_t src_addr, dma_addr_t dst_addr, dma_addr_t size)
 {
     iowrite32(src_addr, dev_region + SRCADDR);
     iowrite32(dst_addr, dev_region + DSTADDR);
@@ -67,7 +67,7 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
     memset(vaddr, 'a', 1000); /* Fill memory with 1mb data, to be transfered */
 
-    dma_transfer(dev_region, dma_addr, dma_addr + 1020, 1000);
+    dma_transfer(dma_addr, dma_addr + 1020, 1000);
 
     while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
 
