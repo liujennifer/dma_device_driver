@@ -10,7 +10,7 @@
 
 #define BAR0 0
 #define NAME "testdev_driver"
-#define COHERENT_REGION_SIZE 32
+#define REGIONS 2
 
 /* Offsets into device's BAR */
 #define SRCADDR 0x00
@@ -29,10 +29,23 @@ static struct pci_device_id id_table[] = {
 MODULE_LICENSE("GPL");
 MODULE_DEVICE_TABLE(pci, id_table);
 
-static dma_addr_t dma_addr;
-static void *vaddr;
 static void __iomem *dev_region;
 static int flags = GFP_KERNEL; /* get free pages on behalf of kernel */
+
+typedef struct RegionInfo {
+    dma_addr_t bus_addr;
+    void *cpu_addr;
+    size_t size;
+} RegionInfo;
+
+static RegionInfo regions[REGIONS];
+
+void create_region(struct pci_dev *pdev, RegionInfo *region, size_t size, int character, int bytes_filled)
+{
+    region->cpu_addr = dma_alloc_coherent(&pdev->dev, size, &region->bus_addr, flags);
+    region->size = size;
+    memset(region->cpu_addr, character, bytes_filled); /* Fill memory with 1mb data, to be transfered */
+}
 
 void dma_transfer(dma_addr_t src_addr, dma_addr_t dst_addr, dma_addr_t size)
 {
@@ -63,22 +76,23 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
     }
 
     pci_set_master(pdev); /* Enable bus mastering bit in device for DMA */
-    vaddr = dma_alloc_coherent(&pdev->dev, COHERENT_REGION_SIZE, &dma_addr, flags);
 
-    memset(vaddr, 'a', 1000); /* Fill memory with 1mb data, to be transfered */
-
-    dma_transfer(dma_addr, dma_addr + 1020, 1000);
+    create_region(pdev, &regions[0], 1000 * 1024, 'a', 1000 * 1024);
+    create_region(pdev, &regions[1], 1000 * 1024, 'b', 1000 * 1024);
+    
+    dma_transfer(regions[0].bus_addr, regions[1].bus_addr, 1000 * 1024);
 
     while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
-
-    printk("Transfer memcmp Status: %d\n", memcmp(vaddr, vaddr + 1020, 1000));
+    printk("Transfer Status: %d\n", memcmp(regions[0].cpu_addr, regions[1].cpu_addr, 1000 * 1024));
 
     return 0;
 }
 
 static void remove(struct pci_dev *pdev)
 {
-    dma_free_coherent(&pdev->dev, COHERENT_REGION_SIZE, vaddr, dma_addr);
+    for (int i = 0; i < REGIONS; i++) {
+        dma_free_coherent(&pdev->dev, regions[i].size, regions[i].cpu_addr, regions[i].bus_addr);
+    }
     pci_release_region(pdev, BAR0);
 }
 
