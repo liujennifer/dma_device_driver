@@ -33,28 +33,21 @@ static void __iomem *dev_region;
 static int flags = GFP_KERNEL; /* get free pages on behalf of kernel */
 
 typedef struct RegionInfo {
-    dma_addr_t bus_addr;
+    dma_addr_t bus_addr; /* mapped with dma_map_single */
+    dma_addr_t bus_addr_unsafe; /* mapped with virt_to_bus, incompatible with IOMMU enabled */
     void *cpu_addr;
     size_t size;
 } RegionInfo;
 
 static RegionInfo regions[REGIONS];
-static RegionInfo unsafe_regions[REGIONS];
 
 void create_region(struct pci_dev *pdev, RegionInfo *region, size_t size, int character, int bytes_filled)
 {
-    region->cpu_addr = dma_alloc_coherent(&pdev->dev, size, &region->bus_addr, flags);
-    region->size = size;
-    memset(region->cpu_addr, character, bytes_filled); /* Fill memory with data, to be transfered */
-}
-
-/* Uses the deprecated virt_to_bus() function to observe behaviour with and without an IOMMU */
-void create_region_unsafe(RegionInfo *region, size_t size, int character, int bytes_filled)
-{
     region->cpu_addr = kmalloc(size, flags);
-    region->bus_addr = virt_to_bus(region->cpu_addr);
     region->size = size;
     memset(region->cpu_addr, character, bytes_filled); /* Fill memory with data, to be transfered */
+    region->bus_addr = dma_map_single(&pdev->dev, region->cpu_addr, size, DMA_BIDIRECTIONAL);
+    region->bus_addr_unsafe = virt_to_bus(region->cpu_addr);
 }
 
 void dma_transfer(dma_addr_t src_addr, dma_addr_t dst_addr, dma_addr_t size)
@@ -91,19 +84,16 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
     create_region(pdev, &regions[0], 1 << 20, 'a', 1 << 20);
     create_region(pdev, &regions[1], 1 << 20, 'b', 1 << 20);
     
+    /* Transfer using dma_map_single mapping */
     dma_transfer(regions[0].bus_addr, regions[1].bus_addr, 1 << 20);
-
     while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
     printk("Transfer Status: %d\n", memcmp(regions[0].cpu_addr, regions[1].cpu_addr, 1 << 20));
 
-    /* Transfer between regions incompatible with IOMMU enabled */
-    create_region_unsafe(&unsafe_regions[0], 1 << 20, 'a', 1 << 20);
-    create_region_unsafe(&unsafe_regions[1], 1 << 20, 'b', 1 << 20);
-    
-    dma_transfer(unsafe_regions[0].bus_addr, unsafe_regions[1].bus_addr, 1 << 20);
-
+    memset(regions[0].cpu_addr, 'c', 1 << 20);
+    /* Transfer using virt_to_bus mapping */
+    dma_transfer(regions[0].bus_addr_unsafe, regions[1].bus_addr_unsafe, 1 << 20);
     while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
-    printk("Transfer Status: %d\n", memcmp(unsafe_regions[0].cpu_addr, unsafe_regions[1].cpu_addr, 1 << 20));
+    printk("Transfer Status: %d\n", memcmp(regions[0].cpu_addr, regions[1].cpu_addr, 1 << 20));
 
     return 0;
 }
@@ -111,8 +101,8 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 static void remove(struct pci_dev *pdev)
 {
     for (int i = 0; i < REGIONS; i++) {
-        dma_free_coherent(&pdev->dev, regions[i].size, regions[i].cpu_addr, regions[i].bus_addr);
-        kfree(unsafe_regions[i].cpu_addr);
+        dma_unmap_single(&pdev->dev, regions[i].bus_addr, regions[i].size, DMA_BIDIRECTIONAL);
+        kfree(regions[i].cpu_addr);
     }
     pci_release_region(pdev, BAR0);
 }
