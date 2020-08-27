@@ -18,6 +18,7 @@
 #define SIZE 0x10
 #define DOORBELL 0x18
 #define STATUS 0x20
+#define BUSY_DELAY 0x28 /* in ms */
 #define RING 0x01
 
 
@@ -50,11 +51,12 @@ void create_region(struct pci_dev *pdev, RegionInfo *region, size_t size, int ch
     region->bus_addr_unsafe = virt_to_bus(region->cpu_addr);
 }
 
-void dma_transfer(dma_addr_t src_addr, dma_addr_t dst_addr, dma_addr_t size)
+void dma_transfer(dma_addr_t src_addr, dma_addr_t dst_addr, dma_addr_t size, dma_addr_t delay)
 {
     iowrite32(src_addr, dev_region + SRCADDR);
     iowrite32(dst_addr, dev_region + DSTADDR);
     iowrite32(size, dev_region + SIZE);
+    iowrite32(delay, dev_region + BUSY_DELAY);
     iowrite32(RING, dev_region + DOORBELL); /* Start DMA */
     printk("DMA Transfer\n");
 }
@@ -80,18 +82,19 @@ static int probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
     pci_set_master(pdev); /* Enable bus mastering bit in device for DMA */
 
+    /* DMA TRANSFER EXAMPLE */
     /* Allocate and fill 1MB regions, then transfer from one to another*/
     create_region(pdev, &regions[0], 1 << 20, 'a', 1 << 20);
     create_region(pdev, &regions[1], 1 << 20, 'b', 1 << 20);
     
     /* Transfer using dma_map_single mapping */
-    dma_transfer(regions[0].bus_addr, regions[1].bus_addr, 1 << 20);
+    dma_transfer(regions[0].bus_addr, regions[1].bus_addr, 1 << 20, 1000);
     while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
     printk("Transfer Status: %d\n", memcmp(regions[0].cpu_addr, regions[1].cpu_addr, 1 << 20));
 
     memset(regions[0].cpu_addr, 'c', 1 << 20);
     /* Transfer using virt_to_bus mapping */
-    dma_transfer(regions[0].bus_addr_unsafe, regions[1].bus_addr_unsafe, 1 << 20);
+    dma_transfer(regions[0].bus_addr_unsafe, regions[1].bus_addr_unsafe, 1 << 20, 1000);
     while (readq(dev_region + STATUS) != 0); /* Poll for transfer completion */
     printk("Transfer Status: %d\n", memcmp(regions[0].cpu_addr, regions[1].cpu_addr, 1 << 20));
 
