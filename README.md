@@ -21,10 +21,13 @@ $ qemu/build/x86_64-softmmu/qemu-system-x86_64 -enable-kvm -hda <path to disk im
 ```
 You may need to enable the IOMMU in the guest:
 - Navigate to /etc/default/grub and edit it so:
-> GRUB_CMDLINE_LINUX="intel_iommu=on"
+```shell
+GRUB_CMDLINE_LINUX_DEFAULT="intel_iommu=on"
+```
 - Then run (may need to "sudo apt-get install update-grub" first)
-> sudo update-grub
-
+```shell
+$ sudo update-grub
+```
 
 **Driver usage**
 - After booting up QEMU, clone this repo inside your guest. Enter the folder and run make.
@@ -35,7 +38,7 @@ $ sudo insmod testdev_driver.ko
 ```
 - You should see any printed output from the device, as well as kernel logs from running:
 ```
-sudo dmesg
+$ sudo dmesg
 ```
 - If you booted QEMU without an IOMMU, you should see two successes (STATUS = 0). With an IOMMU, you should see the first transfer succeed, and the second one fail (non-zero status).
 
